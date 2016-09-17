@@ -10,9 +10,9 @@ Instructions:
 
 In R, set the working directory to that containing this readme file. For example, on a Mac or Linux machine, you might say
 
-    setwd('~/Desktop/mosuo_pprmodel_public')
+    setwd('~/Desktop/mosuo-ppr')
 
-if the folder containing the project is named 'mosuo_pprmodel_public' and on your Desktop. You can tell if you are in the right place by typing in
+if the folder containing the project is named 'mosuo-ppr' and on your Desktop. You can tell if you are in the right place by typing in
 
     dir()
 
@@ -32,4 +32,4 @@ By default the analysis will delete all temporary files and folders, but if you 
 
 The total time until completion will vary by machine; the slowest we have seen has been about 2 hours.
 
-The project is maintained by Bret Beheim (beheim@gmail.com) and is hosted at https://github.com/babeheim.
+The project is maintained by Bret Beheim (beheim@gmail.com) and is hosted at https://github.com/babeheim/mosuo-ppr.
