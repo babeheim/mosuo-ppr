@@ -31,8 +31,8 @@ source('./code/runproject.r')
 
 with the project folder as the working directory. If all goes well, each step of the analysis will execute in sequence, and write the final tables and figures into an 'output' folder, along with a runtime log.
 
-By default the analysis will delete all temporary files and folders, but if you want to see all intermediate steps you can disable this by flipping the `save_temp` variable in 'project_variables.r' from FALSE to TRUE.
+By default the analysis will delete all temporary files and folders, but if you want to see all intermediate steps you can disable this by flipping the `save_temp` variable in 'project_variables.r' from `FALSE` to `TRUE`.
 
 The total time until completion will vary by machine; the slowest we have seen has been about 2 hours.
 
-The project is maintained by Bret Beheim (beheim@gmail.com) and is hosted at https://github.com/babeheim/mosuo-ppr.
+The project is maintained by Bret Beheim (beheim at gmail dot com) and is hosted at https://github.com/babeheim.
