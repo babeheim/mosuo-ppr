@@ -18,9 +18,9 @@ if the folder containing the project is named 'mosuo-ppr' and on your Desktop. Y
 
 and seeing the folders 'code' and 'inputs' and this readme.txt file. The analysis takes as input two files:
 
-'final_regression_data.csv' - this file contains information about all our women and their reproductive histories. It tells us of a woman's decade of birth, her current educational status, whether she has an MI job or not, and the age at which she had each of her children. It also says whether she lives in a matrilineal or patrilineal area, but not which village or anything about the villages. The women are indexed by my random alphanumeric 'uid' which contains no information about household or sampling order.
+'final_regression_data.csv' - this file contains relevant information about our sample of women, including their reproductive histories.
 
-'Mosuo_pop_reg.csv' - this is a pedigree file, so it contains both men and women, indexed by random alphanumeric code 'pid'. It records whether they are a man or a woman and their exact year of birth and year of death. If we know who their father or mother was, that person will also have a random alphanumeric and the connection between the two codes is given in the 'f.pid' or 'm.pid' column. There is also a code to indicate the region they live: mat.tourist, mat.traditional, or patrilineal. This is used as the starting point for the ppr simulation - we grow the population forward 100 years and observe the consequences of living under the PPR regime estimated in our models, and then empirically calculate the honeycomb numbers.
+'Mosuo_pop_reg.csv' - this is a pedigree file, so it contains both men and women, indexed by random alphanumeric code 'pid'. This is used as the starting point for the ppr simulation - we grow the population forward 100 years and observe the consequences of living under the fertility regime estimated in our models, and then empirically calculate the honeycomb PPR numbers.
 
 The analysis itself is broken up into independent modules that pass outputs to each other. The whole process runs by typing one command into R,
 
