@@ -1,0 +1,8 @@
+
+Outstanding jobs:
+- clean code up with lintr
+- add more explicit in-line code documentation
+- rename logistic model parameters to simply make more sense
+- fix the precis / table generation code
+- add parameter to control the number of samples drawn in each model
+- replace my hacky timekeeping code with tictoc package
