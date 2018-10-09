@@ -4,7 +4,7 @@ library(tictoc)
 
 set.seed(1868)
 
-scaffold <- TRUE
+scaffold <- FALSE
 save_temp <- FALSE
 
 enable_sampling <- TRUE

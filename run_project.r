@@ -1,9 +1,11 @@
 
 rm(list = ls())
 
+start_time <- Sys.time()
+
 source("./project_support.r")
 
-start.time <- Sys.time()
+tic.clearlog()
 
 ##############
 

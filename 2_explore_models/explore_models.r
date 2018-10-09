@@ -4,13 +4,24 @@ if (scaffold) {
   source("../project_support.r")
 }
 
-
 dir_init("./temp")
 
 load("./inputs/parity1_re.robj")
 
-# old and new precis bug here!!
-output <- precis(m2re, prob=0.89)@output  
+extract_rethinking_table <- function(model){
+  if(.hasSlot(precis(model), ".S3Class")){
+    output <- as.data.frame(precis(model))
+    colnames(output) <- c("Mean", "SE", "lower",
+      "upper", "n_eff", "Rhat")
+  } else {
+    output <- precis(model)@output
+  }
+  return(output)
+}
+
+# old/new precis bug
+
+output <- extract_rethinking_table(m2re)
 
 rownames(output) <- gsub("a_mu", "Intercept", rownames(output))
 rownames(output) <- gsub("a_sigma", "Mother Random Effect", rownames(output))
@@ -125,8 +136,7 @@ dev.off()
 
 load("./inputs/parity2_re.robj")  
   
-
-output <- precis(m3re, prob=0.89)@output
+output <- extract_rethinking_table(m3re)
   
 rownames(output) <- gsub("a_mu", "Intercept", rownames(output))
 rownames(output) <- gsub("a_sigma", "Mother Random Effect", rownames(output))
@@ -303,8 +313,8 @@ dev.off()
   
   
 load("./inputs/parity2_pooled1_re.robj") # model m4re
-  
-output <- precis(m4re, prob=0.89)@output
+
+output <- extract_rethinking_table(m4re)
   
 rownames(output) <- gsub("a_mu", "Intercept", rownames(output))
 rownames(output) <- gsub("a_sigma", "Mother Random Effect", rownames(output))
@@ -375,7 +385,7 @@ pr.nolineal.pat.ub <- HPDI(pr.nolineal.pat.chain)[2]
   
 load("./inputs/parity2_pooled2_re.robj") # model m5re
   
-output <- precis(m5re, prob=0.89)@output
+output <- extract_rethinking_table(m5re)
   
 rownames(output) <- gsub("a_mu", "Intercept", rownames(output))
 rownames(output) <- gsub("a_sigma", "Mother Random Effect", rownames(output))
