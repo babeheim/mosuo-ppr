@@ -263,7 +263,7 @@ for(j in 1:n.sims){
 
 # now take the averages and plot
 
-pdf(file = "./temp / honeycomb_revised.pdf", height = 3.7, width = 2 * 3.7)
+pdf(file = "./temp/honeycomb_revised.pdf", height = 3.7, width = 2 * 3.7)
   
 par(mar = c(1, 1, 1, 1))
 
