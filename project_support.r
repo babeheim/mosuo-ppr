@@ -1,10 +1,14 @@
+
 library(rethinking)
+library(tictoc)
 
 set.seed(1868)
 
 scaffold <- TRUE
 save_temp <- FALSE
-enable_sampling <- FALSE
+
+enable_sampling <- TRUE
+n_iter <- 4000
 
 task_timer <- function(task="", start=start.time, stop=stop.time){
   time.diff <- round(as.numeric(difftime(stop, start, units="mins")), 1)

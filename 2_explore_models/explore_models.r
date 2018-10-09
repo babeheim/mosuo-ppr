@@ -4,7 +4,6 @@ if (scaffold) {
   source("../project_support.r")
 }
 
-start.time <- Sys.time()
 
 dir_init("./temp")
 
@@ -12,8 +11,6 @@ load("./inputs/parity1_re.robj")
 
 # old and new precis bug here!!
 output <- precis(m2re, prob=0.89)@output  
-
-# logit(p) <- a[id] + b1 * son + b2 * patrilineal + b3 * son_patrilineal + b4 * age15 + b6 * yearbirth1930 + b7 * yearbirth1940 + b8 * yearbirth1950 + b9 * yearbirth1970 + b10 * yearbirth1920 + b11 * yearbirth1980 + b12 * mi_job + b13 * highestgrade + b14 * bly + b15 * age25 + b16 * age30 + b17 * age35 + b18 * age40,
 
 rownames(output) <- gsub("a_mu", "Intercept", rownames(output))
 rownames(output) <- gsub("a_sigma", "Mother Random Effect", rownames(output))
@@ -351,10 +348,14 @@ parity2_rp1_output <- output[,c("mean", "ci")]
 
 post4 <- extract.samples(m4re)
   
-pr.lineal.mat.chain <- logistic(post4$a_mu + post4$b1 * 0 + post4$b2 * 0 + post4$b3 * 0 + post4$b9)
-pr.nolineal.mat.chain <- logistic(post4$a_mu + post4$b1 * 1 + post4$b2 * 0 + post4$b3 * 0 + post4$b9)
-pr.lineal.pat.chain <- logistic(post4$a_mu + post4$b1 * 0 + post4$b2 * 1 + post4$b3 * 0 + post4$b9)
-pr.nolineal.pat.chain <- logistic(post4$a_mu + post4$b1 * 1 + post4$b2 * 1 + post4$b3 * 1 + post4$b9)
+pr.lineal.mat.chain <- logistic(post4$a_mu + post4$b1 * 0 + post4$b2 * 0 +
+  post4$b3 * 0 + post4$b9)
+pr.nolineal.mat.chain <- logistic(post4$a_mu + post4$b1 * 1 + post4$b2 * 0 +
+  post4$b3 * 0 + post4$b9)
+pr.lineal.pat.chain <- logistic(post4$a_mu + post4$b1 * 0 + post4$b2 * 1 +
+  post4$b3 * 0 + post4$b9)
+pr.nolineal.pat.chain <- logistic(post4$a_mu + post4$b1 * 1 + post4$b2 * 1 +
+  post4$b3 * 1 + post4$b9)
   
 pr.lineal.mat.mean <- mean(pr.lineal.mat.chain)
 pr.nolineal.mat.mean <- mean(pr.nolineal.mat.chain)
@@ -527,10 +528,6 @@ text(1.5, 0.2, "Matrilineal\nMosuo", col="steelblue", cex=1.3)
 text(5.5, 0.2, "Patrilineal\nMosuo", col="sandybrown", cex=1.3)
   
 dev.off()
-
-stop.time <- Sys.time()
-
-cat(task_timer("model exploration"), file="./temp/exploremodels_log.txt")
 
 # move all temp to output
 dir_init("./output")

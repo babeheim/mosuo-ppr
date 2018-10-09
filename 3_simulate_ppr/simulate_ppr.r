@@ -4,8 +4,6 @@ if (scaffold) {
   source("../project_support.r")
 }
 
-start.time <- Sys.time()
-
 dir_init("./temp")
 
 reg <- read.csv("./inputs/Mosuo_pop_reg.csv", as.is=TRUE)
@@ -190,9 +188,6 @@ for(j in 1:n.sims){
   write.csv(reg, filename, row.names=FALSE)
     
 }    
-
-stop.time<- Sys.time()
-cat(task_timer("simulate off fitted models"), file="./temp/simulateppr_log.txt")
 
 # move all temp to output
 dir_init("./output")
