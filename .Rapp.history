@@ -1,1902 +1,0 @@
-plot(1:10^2)
-plot(c(1:10)^2)
-plot(c(1:10)^2, type="l")
-plot(c(1:10)^2, type="s")
-plot(c(1:10)^2, type="o")
-Sys.setenv(MAKEFLAGS = "-j4")
-source('http://mc-stan.org/rstan/install.R', echo = TRUE, max.deparse.length = 2000)#
-install_rstan()
-library(rstan)
-system('clang++ -v')
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")
-getwd()
-# 2015-05-13 - Secular Change Looper#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 1000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.0001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- -1.5  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "decreasing_1000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 1000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- -1.5  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "stable_1000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 1000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.0001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- -1.5  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "increasing_1000.csv", row.names=FALSE)
-# 2015-05-13 - Secular Change Looper#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.0001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- -1.5  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "decreasing_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- -1.5  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "stable_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.0001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- -1.5  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "increasing_5000.csv", row.names=FALSE)
-# 2015-05-13 - Secular Change Looper#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 1000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.0001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "decreasing_1000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 1000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "stable_1000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 1000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.0001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "increasing_1000.csv", row.names=FALSE)
-# 2015-05-13 - Secular Change Looper#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.0001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "decreasing_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "stable_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.0001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "increasing_5000.csv", row.names=FALSE)
-# 2015-05-13 - Secular Change Looper#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.0001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit + d$day.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "decreasing_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit + d$day.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "stable_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.0001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1000 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit + d$day.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "increasing_5000.csv", row.names=FALSE)
-# 2015-05-13 - Secular Change Looper#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.0001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit + d$day.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "decreasing_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit + d$day.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "stable_5000.csv", row.names=FALSE)#
-true.bs <- seq(-2, 2, by=0.1)#
-output <- matrix(NA, nrow=length(true.bs), ncol=4)#
-output[,1] <- true.bs#
-colnames(output) <- c("true b", "m1", "m2", "m3")#
-for(k in 1:length(true.bs)){#
-stop.day <- 7 * 360#
-infection.risk <- c(1, 0.7, 0.2, 0.4, 1.2, 2.1, 2, 1.3, 0.9, 1, 1.3, 1.3)#
-conception.risk <- c(2, 1.7, 0.9, 0.2, 0.1, 0.5, 1.1, 2.0, 2.2, 1.9, 1.3, 1.4)#
-n.women <- 5000#
-# 003 to 0007 is where i got these numbers...#
-risk.start <- 0.0001#
-risk.stop <- 0.001#
-daily.slope <- (risk.stop - risk.start)/(stop.day-1)#
-seasonality.amp <- 1/1 # 1 is full amp, smaller the fraction, smaller the amp#
-infection.b <- true.bs[k]  # positive means higher probabliity of event#
-pid <- 1:n.women#
-pregnancy.status <- rep(0, n.women)#
-infection.status <- rep(0, n.women)#
-day.enter <- rnorm(n.women, 1260, 500)#
-day.enter[day.enter < 1 | day.enter > stop.day] <- 1#
-active <- rep(TRUE, n.women)#
-pday <- rep(1, n.women)#
-reg <- data.frame(pid, pregnancy.status, infection.status, pday, day.enter, active)#
-event.log <- matrix(NA, n.women, 6)#
-colnames(event.log) <- c("pid", "infected.at.exit", "day.enter", "day.exit", "pday.enter", "pday.exit")#
-event.log <- as.data.frame(event.log)#
-event.log$pid <- 1:n.women#
-event.log$infected.at.exit <- NA#
-event.log$day.enter <- reg$day.enter#
-event.log$pday.enter <- 1#
-today <- 1#
-infection.baseline.risk <- risk.start + today*daily.slope#
-conception.baseline.risk <- 0.001#
-curve((risk.start + x*daily.slope)*(infection.risk[floor((x %% 360)/30)+1])^(seasonality.amp), from=1, to=stop.day)#
-curve((risk.start + x*daily.slope), from=1, to=stop.day, add=TRUE)#
-while(today < stop.day){#
-	# who is active today?#
-	reg$active <- reg$day.enter <= today#
-	current.month <- floor((today %% 360)/30)+1#
-	infection.baseline.risk <- risk.start + today*daily.slope#
-	reg$infection.status <- 360*rbinom(n.women, 1, prob=infection.baseline.risk*(infection.risk[current.month])^(seasonality.amp)) + reg$infection.status#
-	# if someone gets infected (or re-infected) add this many days to their cured countdown#
-	fertile.women <- which(reg$pregnancy.status == 0 & reg$active)  # aka women on test#
-	if(length(fertile.women)>0){#
-		reg$pregnancy.status[fertile.women] <- 270*rbinom(length(fertile.women), 1, prob=conception.baseline.risk*conception.risk[current.month]*exp(infection.b*as.numeric(reg$infection.status[fertile.women]>0)))#
-	}#
-	new.pregnancies <- which(reg$pregnancy.status==270 & reg$active) # means they exit the test#
-	if(length(new.pregnancies)>0){#
-		for(i in 1:length(new.pregnancies)){#
-			my.active.entry <- max(which(event.log$pid==new.pregnancies[i]))#
-			event.log$day.exit[my.active.entry] <- today#
-			event.log$pday.exit[my.active.entry] <- reg$pday[new.pregnancies[i]]#
-			event.log$infected.at.exit[my.active.entry] <- as.numeric(reg$infection.status[new.pregnancies[i]] > 0)#
-		}#
-	}#
-	end.pregnancies <- which(reg$pregnancy.status==1 & reg$active) # means they rejoin  the test and get a new event#
-	if(length(end.pregnancies)>0){#
-		for(i in 1:length(end.pregnancies)){#
-			new.event <- c(end.pregnancies[i], NA, today, NA, reg$pday[end.pregnancies[i]], NA)#
-			event.log <- rbind(event.log, new.event)#
-		}#
-	}#
-	if(any(reg$pregnancy.status==0 & reg$active)) reg$pday[reg$pregnancy.status==0] <- reg$pday[reg$pregnancy.status==0] + 1#
-	if(any(reg$pregnancy.status>0 & reg$active)) reg$pregnancy.status[which(reg$pregnancy.status>0)] <- reg$pregnancy.status[which(reg$pregnancy.status>0)]-1#
-	if(any(reg$infection.status>0)) reg$infection.status[which(reg$infection.status>0)] <- reg$infection.status[which(reg$infection.status>0)]-1#
-	today <- today + 1#
-	# if(today %% 30==0) print(today)#
-	if(today == stop.day){#
-		tar <- which(is.na(event.log$day.exit))#
-		if(length(tar)>0){#
-			event.log$day.exit[tar] <- stop.day#
-			event.log$pday.exit[tar] <- reg$pday[match(event.log$pid[tar], reg$pid)]#
-			event.log$infected.at.exit[tar] <- as.numeric(reg$infection.status[match(event.log$pid[tar], reg$pid)] > 0)#
-		}#
-	}#
-}#
-d <- event.log#
-rownames(d) <- NULL#
-d <- as.data.frame(d)#
-d$event <- 1#
-d$event[d$day.exit==stop.day] <- 0#
-drop <- which(d$day.enter==d$day.exit | d$pday.enter==d$pday.exit)#
-if(length(drop)>0) d <- d[-drop,]#
-length(drop)#
-d$days.out <- d$day.exit - d$day.enter#
-d$ini <- 0#
-library(survival)#
-m1 <- coxph(Surv(d$day.enter, d$day.exit, d$event) ~ d$infected.at.exit)#
-m2 <- coxph(Surv(d$pday.enter, d$pday.exit, d$event) ~ d$infected.at.exit + d$day.exit)#
-m3 <- coxph(Surv(d$ini, d$days.out, d$event) ~ d$infected.at.exit + d$day.exit)  # it might work!!#
-output[k,2] <- coef(m1)[1]  #
-output[k,3] <- coef(m2)[1]#
-output[k,4] <- coef(m3)[1]#
-print(k)#
-}#
-write.csv(output, "increasing_5000.csv", row.names=FALSE)
-x <- rnorm(10000, 0, 1)
-y <-
-y <- (x-mean(x))^2
-hist(y)
-hist(y, breaks=20)
-hist(y, breaks=50)
-par(mfrow=c(2,1))
-hist(x, breaks=50)
-hist(y, breaks=50)
-hist(x, breaks=50, xlim=c(-4,4))
-hist(y, breaks=50, xlim=c(-4,4))
-mean(y)
-var(y)
-var(x)
-z <- x^2
-hist(x, breaks=50, xlim=c(-4,4))
-hist(z, breaks=50, xlim=c(-4,4))
-x <- rnorm(10000, 10, 1)
-y <- (x-mean(x))^2
-z <- x^2
-hist(x, breaks=50, xlim=c(-4,4))
-hist(x, breaks=50, xlim=c(6,14))
-hist(z, breaks=50)
-hist(y, breaks=50)
-hist(z, breaks=50)
-hist(x, breaks=50, xlim=c(6,14))
-hist(y, breaks=50)
-3000/2689.96
-712/1.115
-800+2800+2689.96-1845
-setwd("/Volumes/FREECOM HDD/bret/Project Archive/Mosuo Stuff/pprmodel_public")
-rm(list=ls())
-logs <- c('./annualparitytable/log/log.txt',#
-'./regressiontable/log/log.txt',#
-'./exploredata/log/log.txt',#
-'./fitmodels/log/log.txt',#
-'./exploremodels/log/log.txt',#
-'./simulateppr/log/log.txt',#
-'./exploresimulation/log/log.txt')#
-#
-projectlog <- character(0)#
-for(i in 1:length(logs)) projectlog <- c(projectlog, readLines(logs[i]))#
-writeLines(projectlog, './projectlog/projectlog.txt')
-logs <- c('./fitmodels/log/log.txt',#
-'./exploremodels/log/log.txt',#
-'./simulateppr/log/log.txt',#
-'./exploresimulation/log/log.txt')#
-#
-projectlog <- character(0)#
-for(i in 1:length(logs)) projectlog <- c(projectlog, readLines(logs[i]))#
-writeLines(projectlog, './projectlog/projectlog.txt')
-files <- list.files('./projectoutput', full.names=TRUE)#
-if(length(files)>0) file.remove(files)
-files <- list.files('./exploremodels/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./exploresimulation/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./projectlog', full.names=TRUE)#
-file.copy(files, './projectoutput')
-getwd('..')
-setwd('..')
-files <- list.files('./exploresimulation/inputs', full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-files <- list.files('./simulateppr/output', pattern='*.csv', full.names=TRUE)#
-file.copy(files, './exploresimulation/inputs')#
-setwd('./exploresimulation')#
-source('./code/exploresimulation_code.r')#
-setwd('..')#
-# inputs all the files from ./simulateppr#
-# output the honeycomb#
-#
-logs <- c('./fitmodels/log/log.txt',#
-'./exploremodels/log/log.txt',#
-'./simulateppr/log/log.txt',#
-'./exploresimulation/log/log.txt')#
-#
-projectlog <- character(0)#
-for(i in 1:length(logs)) projectlog <- c(projectlog, readLines(logs[i]))#
-writeLines(projectlog, './projectlog/projectlog.txt')#
-#
-files <- list.files('./projectoutput', full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-#
-files <- list.files('./exploremodels/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./exploresimulation/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./projectlog', full.names=TRUE)#
-file.copy(files, './projectoutput')
-getwd()
-setwd('./pprmodel_public')
-dir()
-setwd('./Mosuo Project/pprmodel_public')
-setwd('./Mosuo Stuff/pprmodel_public')
-files <- list.files('./exploresimulation/inputs', full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-files <- list.files('./simulateppr/output', pattern='*.csv', full.names=TRUE)#
-file.copy(files, './exploresimulation/inputs')#
-setwd('./exploresimulation')#
-source('./code/exploresimulation_code.r')#
-setwd('..')#
-# inputs all the files from ./simulateppr#
-# output the honeycomb#
-#
-logs <- c('./fitmodels/log/log.txt',#
-'./exploremodels/log/log.txt',#
-'./simulateppr/log/log.txt',#
-'./exploresimulation/log/log.txt')#
-#
-projectlog <- character(0)#
-for(i in 1:length(logs)) projectlog <- c(projectlog, readLines(logs[i]))#
-writeLines(projectlog, './projectlog/projectlog.txt')#
-#
-files <- list.files('./projectoutput', full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-#
-files <- list.files('./exploremodels/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./exploresimulation/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./projectlog', full.names=TRUE)#
-file.copy(files, './projectoutput')
-files <- list.files('./exploresimulation/inputs', full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-files <- list.files('./simulateppr/output', pattern='*.csv', full.names=TRUE)#
-file.copy(files, './exploresimulation/inputs')#
-setwd('./exploresimulation')#
-source('./code/exploresimulation_code.r')#
-setwd('..')#
-# inputs all the files from ./simulateppr#
-# output the honeycomb#
-#
-logs <- c('./fitmodels/log/log.txt',#
-'./exploremodels/log/log.txt',#
-'./simulateppr/log/log.txt',#
-'./exploresimulation/log/log.txt')#
-#
-projectlog <- character(0)#
-for(i in 1:length(logs)) projectlog <- c(projectlog, readLines(logs[i]))#
-writeLines(projectlog, './projectlog/projectlog.txt')#
-#
-files <- list.files('./projectoutput', full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-#
-files <- list.files('./exploremodels/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./exploresimulation/output', full.names=TRUE)#
-file.copy(files, './projectoutput')#
-files <- list.files('./projectlog', full.names=TRUE)#
-file.copy(files, './projectoutput')
-files <- list.files(c('./projectoutput', './fitmodels/inputs', './fitmodels/log', './fitmodels/output', './exploremodels/inputs', './exploremodels/log', './exploremodels/output', './simulateppr/inputs', './simulateppr/log', './simulateppr/output', './exploresimulation/log', './exploresimulation/inputs', './exploresimulation/output'), full.names=TRUE)#
-if(length(files)>0) file.remove(files)#
-# housekeeping: delete all inputs and outputs from all modules
