@@ -1,5 +1,7 @@
 
 Outstanding jobs:
 - clean code up with lintr
-- add more explicit in-line code documentation
+  - replace all . with _ in variable names
 - rename logistic model parameters to simply make more sense
+- better motivate the choice of priors for the model fits
+- rewrite the `# check this number of ppl` lines and remove comments

@@ -9,8 +9,42 @@ dir_init("./temp")
 d <- read.csv("./inputs/final_regression_data.csv", as.is = TRUE)
 d$pcom <- gsub("P", "", d$pcom)
 
+# all models use the following predictor baselines:
+# - cohort 1960-69
+# - age 25-29
+# - matrilineal
+# - no market job
+# - no school
+
+# estimate the probability women with zero children (parity 0) give birth in dataset
+
+tic("fit parity0 random effects model")
+d6 <- d[which(d$pcom %in% c("")), ]
+uid.list <- sort(unique(d6$uid))
+d6$id <- match(d6$uid, uid.list)
+model6re <- alist(
+  conc ~ dbinom(1, p),
+  logit(p) <- a[id] +
+    b2 * patrilineal + b4 * age15 +
+    b6 * yearbirth1930 + b7 * yearbirth1940 + b8 * yearbirth1950 +
+    b9 * yearbirth1970 + b10 * yearbirth1920 + b11 * yearbirth1980 +
+    b12 * mi_job + b13 * highestgrade +
+    b15 * age25 + b16 * age30 + b17 * age35 + b18 * age40,
+  a[id] ~ dnorm(a_mu, a_sigma),
+  c(a_mu, b2, b4, b6, b7, b8, b9, b10, b11, b12, b13,
+    b15, b16, b17, b18) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
+)
+m6re <- map2stan(model6re, data = d6, sample = enable_sampling, iter = n_iter)
+save(m6re, file = "./temp/parity0_re.robj")
+toc(log = TRUE)
+
+# estimate the probability women with one child (parity 1) give birth in dataset
+# baseline:
+# - child is daughter
+
 tic("fit parity1 random effects model")
-d2 <- d[which(d$pcom %in% c("1", "0")),]
+d2 <- d[which(d$pcom %in% c("1", "0")), ]
 d2$son <- as.numeric(d2$pcode)
 d2$son_patrilineal <- as.numeric(d2$pcode == 1 & d2$patrilineal == 1)
 uid.list <- sort(unique(d2$uid))
@@ -27,20 +61,20 @@ d2$id <- match(d2$uid, uid.list)
     b15 * age25 + b16 * age30 + b17 * age35 + b18 * age40,
   a[id] ~ dnorm(a_mu, a_sigma),
   c(a_mu, b1, b2, b3, b4, b6, b7, b8, b9, b10, b11, b12, b13, b14,
-    b15, b16, b17, b18) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
+    b15, b16, b17, b18) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
 )
 m2re <- map2stan(model2re, data = d2, sample = enable_sampling, iter = n_iter)
 save(m2re, file = "./temp/parity1_re.robj")
 toc(log = TRUE)
 
-# baselines:
-# cohort 1960-69
-# age 25-29
+## estimate the probability women with two children (parity 2) give birth in dataset
+# baseline:
+# - children are both daughters
 
 tic("fit parity2 random effects model")
-d3 <- d[which(d$pcom %in% c("11", "10", "00")),]
-d3 <- d3[which(d3$yearbirth1980 != "1"),]
+d3 <- d[which(d$pcom %in% c("11", "10", "00")), ]
+d3 <- d3[which(d3$yearbirth1980 != "1"), ]
 d3$pat_10 <- as.numeric(d3$pcode == "10" & d3$patrilineal == 1)
 d3$pat_11 <- as.numeric(d3$pcode == "11" & d3$patrilineal == 1)
 d3$pcode10 <- as.numeric(d3$pcode == "10")
@@ -60,14 +94,16 @@ model3 <- alist(
     b17 * age30 + b18 * age35 + b19 * age40,
   a[id] ~ dnorm(a_mu, a_sigma),
   c(a_mu, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b14,
-    b15, b16, b17, b18, b19) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
+    b15, b16, b17, b18, b19) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
 )
 m3re <- map2stan(model3, data = d3, iter = n_iter, sample = enable_sampling)
 save(m3re, file = "./temp/parity2_re.robj")
 toc(log = TRUE)
 
-# recode parity 2 for lineal vs nonlineal
+# recode parity 2 model, categorizing children as "lineal" or "nonlineal" sex
+# baseline:
+# - woman has at least one `lineal` child
 
 tic("fit parity2 'lineal' random effects model")
 d4 <- d3
@@ -89,14 +125,16 @@ model4 <- alist(
     b15 * age30 + b16 * age35 + b17 * age40,
   a[id] ~ dnorm(a_mu, a_sigma),
   c(a_mu, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b12, b13,
-    b14, b15, b16, b17) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
+    b14, b15, b16, b17) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
 )
 m4re <- map2stan(model4, data = d4, sample = enable_sampling, iter = n_iter)
 save(m4re, file = "./temp/parity2_pooled1_re.robj")
 toc(log = TRUE)
 
-#  recode for homogeneous and heterogeneous gender compositions for parity2
+# recode parity 2 model for mixed vs homogenous gender pairs of children
+# baseline:
+# - woman has two children of the same sex
 
 tic("fit parity2 'balanced' random effects model")
 d5 <- d4
@@ -117,52 +155,24 @@ model5 <- alist(
     b15 * age30 + b16 * age35 + b17 * age40,
   a[id] ~ dnorm(a_mu, a_sigma),
   c(a_mu, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b12, b13,
-    b14, b15, b16, b17) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
+    b14, b15, b16, b17) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
 )
 m5re <- map2stan(model5, data = d5, sample = enable_sampling, iter = n_iter)
 save(m5re, file = "./temp/parity2_pooled2_re.robj")
 toc(log = TRUE)
 
-# parity 0
 
-# baselines:
-# 1960-69 cohort
-# age 20-24
-
-tic("fit parity0 random effects model")
-d6 <- d[which(d$pcom %in% c("")),]
-uid.list <- sort(unique(d6$uid))
-d6$id <- match(d6$uid, uid.list)
-model6re <- alist(
-  conc ~ dbinom(1, p),
-  logit(p) <- a[id] +
-    b2 * patrilineal + b4 * age15 +
-    b6 * yearbirth1930 + b7 * yearbirth1940 + b8 * yearbirth1950 +
-    b9 * yearbirth1970 + b10 * yearbirth1920 + b11 * yearbirth1980 +
-    b12 * mi_job + b13 * highestgrade +
-    b15 * age25 + b16 * age30 + b17 * age35 + b18 * age40,
-  a[id] ~ dnorm(a_mu, a_sigma),
-  c(a_mu, b2, b4, b6, b7, b8, b9, b10, b11, b12, b13,
-    b15, b16, b17, b18) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
-)
-m6re <- map2stan(model6re, data = d6, sample = enable_sampling, iter = n_iter)
-save(m6re, file = "./temp/parity0_re.robj")
-toc(log = TRUE)
-
-# analysis of parity 3
-
-# baselines:
-# 1960-69 cohort
-# age 25-29
+# estimate the probability women with three children (parity 3) give birth in dataset
+# baseline:
+# - woman has three daughters (code 000)
 
 tic("fit parity3 random effects model")
-d7 <- d[which(nchar(d$pcom) == "3"),]
-d7 <- d7[which(d7$yearbirth1980 != "1"),] # check this number of ppl
-d7 <- d7[which(d7$yearbirth1970 != "1"),] # check this number of ppl
-d7 <- d7[which(d7$ageb != "15"),] # check this number of ppl
-d7 <- d7[which(d7$mi_job != "1"),] # check this number of ppl
+d7 <- d[which(nchar(d$pcom) == "3"), ]
+d7 <- d7[which(d7$yearbirth1980 != "1"), ] # check this number of ppl
+d7 <- d7[which(d7$yearbirth1970 != "1"), ] # check this number of ppl
+d7 <- d7[which(d7$ageb != "15"), ] # check this number of ppl
+d7 <- d7[which(d7$mi_job != "1"), ] # check this number of ppl
 d7$pat_100 <- as.numeric(d7$pcom == "100" & d7$patrilineal == 1)
 d7$pat_110 <- as.numeric(d7$pcom == "110" & d7$patrilineal == 1)
 d7$pat_111 <- as.numeric(d7$pcom == "111" & d7$patrilineal == 1)
@@ -185,26 +195,25 @@ model7 <- alist(
     b18 * age30 + b19 * age35 + b20 * age40,
   a[id] ~ dnorm(a_mu, a_sigma),
   c(a_mu, b1, b2, b3, b4, b5, b6, b7, b9, b10, b11, b12, b14, b16, b17,
-  	b18, b19, b20) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
+    b18, b19, b20) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
 )
 m7re <- map2stan(model7, data = d7, iter = n_iter, sample = enable_sampling)
 save(m7re, file = "./temp/parity3_re.robj")
 toc(log = TRUE)
 
-# analysis of parity 4
 
-# baselines:
-# 1940-49 cohort
-# age 40+
+# estimate the probability women with four children (parity 4) give birth in dataset
+# baseline:
+# - woman has four daughters (code 0000)
 
 tic("fit parity4 random effects model")
-d8 <- d[which(nchar(d$pcom) == "4"),]
-d8 <- d8[which(d8$yearbirth1980 != "1"),] # check this number of ppl
-d8 <- d8[which(d8$yearbirth1970 != "1"),] # check this number of ppl
-d8 <- d8[which(d8$yearbirth1960 != "1"),] # check this number of ppl
-d8 <- d8[which(d8$ageb != "15"),] # check this number of ppl
-d8 <- d8[which(d8$ageb != "20"),] # check this number of ppl
+d8 <- d[which(nchar(d$pcom) == "4"), ]
+d8 <- d8[which(d8$yearbirth1980 != "1"), ] # check this number of ppl
+d8 <- d8[which(d8$yearbirth1970 != "1"), ] # check this number of ppl
+d8 <- d8[which(d8$yearbirth1960 != "1"), ] # check this number of ppl
+d8 <- d8[which(d8$ageb != "15"), ] # check this number of ppl
+d8 <- d8[which(d8$ageb != "20"), ] # check this number of ppl
 d8$pat_1000 <- as.numeric(d8$pcom == "1000" & d8$patrilineal == 1)
 d8$pat_1100 <- as.numeric(d8$pcom == "1100" & d8$patrilineal == 1)
 d8$pat_1110 <- as.numeric(d8$pcom == "1110" & d8$patrilineal == 1)
@@ -229,8 +238,8 @@ model8 <- alist(
     b15 * age25 + b16 * age30 + b17 * age35,
   a[id] ~ dnorm(a_mu, a_sigma),
   c(a_mu, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14,
-    b15, b16, b17) ~ dnorm(0, 100),
-  a_sigma ~ dcauchy(0,1)
+    b15, b16, b17) ~ dnorm(0, 1),
+  a_sigma ~ dcauchy(0, 1)
 )
 m8re <- map2stan(model8, data = d8, iter = n_iter, sample = enable_sampling)
 save(m8re, file = "./temp/parity4_re.robj")
@@ -242,4 +251,4 @@ files <- list.files("./temp", full.names = TRUE)
 file.copy(files, "./output")
 
 # housekeeping - delete temp
-if(!save_temp) unlink("./temp", recursive = TRUE)
+if (!save_temp) unlink("./temp", recursive = TRUE)
