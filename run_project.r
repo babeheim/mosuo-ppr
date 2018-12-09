@@ -2,9 +2,7 @@
 rm(list = ls())
 
 start_time <- Sys.time()
-
 source("./project_support.r")
-
 tic.clearlog()
 
 ##############
@@ -57,22 +55,15 @@ toc(log = TRUE)
 ##############
 
 dir_init("./output")
-
-tic.log(format = TRUE)
-msg_log <- unlist(tic.log())
-msg_log <- paste0("- ", msg_log)
-if (!exists("start_time")) start_time <- NA
-header <- c(
-  "project: Mosuo parity-progression ratio analysis",
-  paste("start_time:", start_time),
-  paste("finish_time:", Sys.time()),
-  "events:")
-msg_log <- c(header, msg_log)
-writeLines(msg_log, "./output/log.txt")
-
 files <- list.files(
   c(
     "./2_explore_models/output",
     "./4_explore_simulation/output"
   ), full.names = TRUE)
 file.copy(files, "./output")
+
+##############
+
+if (!exists("start_time")) start_time <- "unknown"
+write_log(title = "project: Mosuo parity-progression ratio analysis",
+  path = "./output/log.txt", start_time = start_time)

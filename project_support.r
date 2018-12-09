@@ -4,12 +4,27 @@ library(tictoc)
 
 set.seed(1868)
 
-scaffold <- TRUE
+scaffold <- FALSE
 save_temp <- FALSE
 
 n.sims <- 30
 enable_sampling <- TRUE
 n_iter <- 4000
+
+write_log <- function(title, path, start_time) {
+  tic.log(format = TRUE)
+  msg_log <- unlist(tic.log())
+  msg_log <- paste0("- ", msg_log)
+  if (!exists("start_time")) start_time <- NA
+  header <- c(
+    title,
+    paste("start_time:", start_time),
+    paste("finish_time:", Sys.time()),
+    "events:")
+  msg_log <- c(header, msg_log)
+  writeLines(msg_log, path)
+  print("tictoc log written to file")
+}
 
 hex <- function(x, y, col, ...) {
   for (i in 1:length(x)) {
