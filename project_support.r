@@ -1,6 +1,7 @@
 
 library(rethinking)
 library(tictoc)
+library(dplyr)
 
 set.seed(1868)
 
