@@ -1,5 +1,9 @@
 
 library(rethinking)
+# Additional package dependencies not discoverable from package metadata.
+# rethinking::ulam() uses digest internally but rethinking does not
+# currently declare digest in DESCRIPTION.
+requireNamespace("digest")
 library(tictoc)
 library(dplyr)
 
