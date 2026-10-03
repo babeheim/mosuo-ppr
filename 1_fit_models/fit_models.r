@@ -22,6 +22,25 @@ tic("fit parity0 random effects model")
 d6 <- d[which(d$pcom %in% c("")), ]
 uid.list <- sort(unique(d6$uid))
 d6$id <- match(d6$uid, uid.list)
+dm <- select(
+  d6,
+  conc,
+  id,
+  patrilineal,
+  age15,
+  yearbirth1930,
+  yearbirth1940,
+  yearbirth1950,
+  yearbirth1970,
+  yearbirth1920,
+  yearbirth1980,
+  mi_job,
+  highestgrade,
+  age25,
+  age30,
+  age35,
+  age40
+)
 model6re <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
@@ -35,7 +54,7 @@ model6re <- alist(
     b15, b16, b17, b18) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m6re <- ulam(model6re, data = d6, sample = enable_sampling, iter = n_iter)
+m6re <- ulam(model6re, data = dm, sample = enable_sampling, iter = n_iter)
 save(m6re, file = "./temp/parity0_re.robj")
 toc(log = TRUE)
 
@@ -49,7 +68,31 @@ d2$son <- as.numeric(d2$pcode)
 d2$son_patrilineal <- as.numeric(d2$pcode == 1 & d2$patrilineal == 1)
 uid.list <- sort(unique(d2$uid))
 d2$id <- match(d2$uid, uid.list)
- model2re <- alist(
+
+dm <- select(
+  d2,
+  conc,
+  id,
+  son,
+  patrilineal,
+  son_patrilineal,
+  age15,
+  yearbirth1930,
+  yearbirth1940,
+  yearbirth1950,
+  yearbirth1970,
+  yearbirth1920,
+  yearbirth1980,
+  mi_job,
+  highestgrade,
+  bly,
+  age25,
+  age30,
+  age35,
+  age40
+)
+
+model2re <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
     b1 * son + b2 * patrilineal + b3 * son_patrilineal +
@@ -64,7 +107,7 @@ d2$id <- match(d2$uid, uid.list)
     b15, b16, b17, b18) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m2re <- ulam(model2re, data = d2, sample = enable_sampling, iter = n_iter)
+m2re <- ulam(model2re, data = dm, sample = enable_sampling, iter = n_iter)
 save(m2re, file = "./temp/parity1_re.robj")
 toc(log = TRUE)
 
@@ -81,6 +124,31 @@ d3$pcode10 <- as.numeric(d3$pcode == "10")
 d3$pcode11 <- as.numeric(d3$pcode == "11")
 uid.list <- sort(unique(d3$uid))
 d3$id <- match(d3$uid, uid.list)
+
+dm <- select(
+  d3,
+  conc,
+  id,
+  pcode10,
+  pcode11,
+  patrilineal,
+  pat_10,
+  pat_11,
+  age15,
+  age20,
+  yearbirth1930,
+  yearbirth1940,
+  yearbirth1950,
+  yearbirth1970,
+  yearbirth1920,
+  mi_job,
+  highestgrade,
+  bly,
+  age30,
+  age35,
+  age40
+)
+
 model3 <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
@@ -97,7 +165,7 @@ model3 <- alist(
     b15, b16, b17, b18, b19) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m3re <- ulam(model3, data = d3, iter = n_iter, sample = enable_sampling)
+m3re <- ulam(model3, data = dm, iter = n_iter, sample = enable_sampling)
 save(m3re, file = "./temp/parity2_re.robj")
 toc(log = TRUE)
 
@@ -114,6 +182,29 @@ d4$type[d4$pcode != "11" & d4$patrilineal == "0"] <- "at_least_one_lineal"
 d4$type[d4$pcode != "00" & d4$patrilineal == "1"] <- "at_least_one_lineal"
 d4$no_lineal_pat <- as.numeric(d4$type == "no_lineal" & d4$patrilineal == "1")
 d4$type_nolineal <- as.numeric(d4$type == "no_lineal")
+
+dm <- select(
+  d4,
+  conc,
+  id,
+  type_nolineal,
+  patrilineal,
+  no_lineal_pat,
+  age15,
+  age20,
+  yearbirth1930,
+  yearbirth1940,
+  yearbirth1950,
+  yearbirth1970,
+  yearbirth1920,
+  mi_job,
+  highestgrade,
+  bly,
+  age30,
+  age35,
+  age40
+)
+
 model4 <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
@@ -128,7 +219,7 @@ model4 <- alist(
     b14, b15, b16, b17) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m4re <- ulam(model4, data = d4, sample = enable_sampling, iter = n_iter)
+m4re <- ulam(model4, data = dm, sample = enable_sampling, iter = n_iter)
 save(m4re, file = "./temp/parity2_pooled1_re.robj")
 toc(log = TRUE)
 
@@ -144,6 +235,28 @@ d5$type[d5$pcode == "01" | d5$pcode == "10"] <- "M"
 d5$typeM <- as.numeric(d5$type == "M")
 d5$Mpat <- as.numeric(d5$type == "M" & d5$patrilineal == "1")
 d5$type_mixed <- as.numeric(d5$type == "M")
+
+dm <- select(
+  d5,
+  conc,
+  id,
+  type_mixed,
+  patrilineal,
+  Mpat,
+  age15,
+  age20,
+  yearbirth1930,
+  yearbirth1940,
+  yearbirth1950,
+  yearbirth1970,
+  yearbirth1920,
+  mi_job,
+  highestgrade,
+  bly,
+  age30,
+  age35,
+  age40
+)
 model5 <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
@@ -158,7 +271,7 @@ model5 <- alist(
     b14, b15, b16, b17) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m5re <- ulam(model5, data = d5, sample = enable_sampling, iter = n_iter)
+m5re <- ulam(model5, data = dm, sample = enable_sampling, iter = n_iter)
 save(m5re, file = "./temp/parity2_pooled2_re.robj")
 toc(log = TRUE)
 
@@ -181,6 +294,30 @@ d7$pcode110 <- as.numeric(d7$pcom == "110")
 d7$pcode111 <- as.numeric(d7$pcom == "111")
 uid.list <- sort(unique(d7$uid))
 d7$id <- match(d7$uid, uid.list)
+
+dm <- select(
+  d7,
+  conc,
+  id,
+  pcode100,
+  pcode110,
+  pcode111,
+  patrilineal,
+  pat_100,
+  pat_110,
+  pat_111,
+  age20,
+  yearbirth1930,
+  yearbirth1940,
+  yearbirth1950,
+  yearbirth1920,
+  highestgrade,
+  bly,
+  age30,
+  age35,
+  age40
+)
+
 model7 <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
@@ -198,7 +335,7 @@ model7 <- alist(
     b18, b19, b20) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m7re <- ulam(model7, data = d7, iter = n_iter, sample = enable_sampling)
+m7re <- ulam(model7, data = dm, iter = n_iter, sample = enable_sampling)
 save(m7re, file = "./temp/parity3_re.robj")
 toc(log = TRUE)
 
@@ -224,6 +361,29 @@ d8$pcode1110 <- as.numeric(d8$pcom == "1110")
 d8$pcode1111 <- as.numeric(d8$pcom == "1111")
 uid.list <- sort(unique(d8$uid))
 d8$id <- match(d8$uid, uid.list)
+
+dm <- select(
+  d8,
+  conc,
+  id,
+  pcode1000,
+  pcode1100,
+  pcode1110,
+  pcode1111,
+  patrilineal,
+  pat_1000,
+  pat_1100,
+  pat_1110,
+  pat_1111,
+  yearbirth1920,
+  yearbirth1930,
+  yearbirth1950,
+  highestgrade,
+  bly,
+  age25,
+  age30,
+  age35
+)
 model8 <- alist(
   conc ~ dbinom(1, p),
   logit(p) <- a[id] +
@@ -241,7 +401,7 @@ model8 <- alist(
     b15, b16, b17) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m8re <- ulam(model8, data = d8, iter = n_iter, sample = enable_sampling)
+m8re <- ulam(model8, data = dm, iter = n_iter, sample = enable_sampling)
 save(m8re, file = "./temp/parity4_re.robj")
 toc(log = TRUE)
 
