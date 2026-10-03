@@ -35,7 +35,7 @@ model6re <- alist(
     b15, b16, b17, b18) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m6re <- map2stan(model6re, data = d6, sample = enable_sampling, iter = n_iter)
+m6re <- ulam(model6re, data = d6, sample = enable_sampling, iter = n_iter)
 save(m6re, file = "./temp/parity0_re.robj")
 toc(log = TRUE)
 
@@ -64,7 +64,7 @@ d2$id <- match(d2$uid, uid.list)
     b15, b16, b17, b18) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m2re <- map2stan(model2re, data = d2, sample = enable_sampling, iter = n_iter)
+m2re <- ulam(model2re, data = d2, sample = enable_sampling, iter = n_iter)
 save(m2re, file = "./temp/parity1_re.robj")
 toc(log = TRUE)
 
@@ -97,7 +97,7 @@ model3 <- alist(
     b15, b16, b17, b18, b19) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m3re <- map2stan(model3, data = d3, iter = n_iter, sample = enable_sampling)
+m3re <- ulam(model3, data = d3, iter = n_iter, sample = enable_sampling)
 save(m3re, file = "./temp/parity2_re.robj")
 toc(log = TRUE)
 
@@ -128,7 +128,7 @@ model4 <- alist(
     b14, b15, b16, b17) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m4re <- map2stan(model4, data = d4, sample = enable_sampling, iter = n_iter)
+m4re <- ulam(model4, data = d4, sample = enable_sampling, iter = n_iter)
 save(m4re, file = "./temp/parity2_pooled1_re.robj")
 toc(log = TRUE)
 
@@ -158,7 +158,7 @@ model5 <- alist(
     b14, b15, b16, b17) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m5re <- map2stan(model5, data = d5, sample = enable_sampling, iter = n_iter)
+m5re <- ulam(model5, data = d5, sample = enable_sampling, iter = n_iter)
 save(m5re, file = "./temp/parity2_pooled2_re.robj")
 toc(log = TRUE)
 
@@ -198,7 +198,7 @@ model7 <- alist(
     b18, b19, b20) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m7re <- map2stan(model7, data = d7, iter = n_iter, sample = enable_sampling)
+m7re <- ulam(model7, data = d7, iter = n_iter, sample = enable_sampling)
 save(m7re, file = "./temp/parity3_re.robj")
 toc(log = TRUE)
 
@@ -241,7 +241,7 @@ model8 <- alist(
     b15, b16, b17) ~ dnorm(0, 1),
   a_sigma ~ dcauchy(0, 1)
 )
-m8re <- map2stan(model8, data = d8, iter = n_iter, sample = enable_sampling)
+m8re <- ulam(model8, data = d8, iter = n_iter, sample = enable_sampling)
 save(m8re, file = "./temp/parity4_re.robj")
 toc(log = TRUE)
 
